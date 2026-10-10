@@ -32,23 +32,32 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Pin CI build to Android API 36
+      - name: Prepare custom source for API 37.0
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-          s2 = s.replace("version = release(37)", "version = release(36)")
-          s2 = s2.replace("targetSdk = 37", "targetSdk = 36")
-          if s2 == s:
-              raise SystemExit("Could not locate compileSdk/targetSdk 37 in app/build.gradle.kts")
-          p.write_text(s2)
-          print("CI compileSdk/targetSdk pinned to API 36")
+
+          gradle = Path("app/build.gradle.kts")
+          s = gradle.read_text()
+          needle = "        version = release(37)"
+          replacement = "        version = release(37) {\n            minorApiLevel = 0\n        }"
+          if needle not in s:
+              raise SystemExit("Could not locate compileSdk 37 block")
+          gradle.write_text(s.replace(needle, replacement, 1))
+
+          player = Path("app/src/main/java/omnibeat/app/ui/PlayerPanel.kt")
+          p = player.read_text()
+          needle2 = "        PlaybackTrackStatus.WaitingMetadata -> stringResource(R.string.track_text_waiting_metadata)\n        PlaybackTrackStatus.NoMetadata -> stringResource(R.string.track_text_no_metadata)"
+          replacement2 = "        PlaybackTrackStatus.WaitingMetadata -> stringResource(R.string.track_text_waiting_metadata)\n        PlaybackTrackStatus.Recognizing -> stringResource(R.string.track_text_recognizing)\n        PlaybackTrackStatus.NoMetadata -> stringResource(R.string.track_text_no_metadata)"
+          if needle2 not in p:
+              raise SystemExit("Could not locate track status mapping in PlayerPanel.kt")
+          player.write_text(p.replace(needle2, replacement2, 1))
+          print("Configured compileSdk 37.0 and fixed Recognizing UI branch")
           PY
 
-      - name: Prepare Android 36 SDK
+      - name: Prepare Android 37.0 SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -58,7 +67,10 @@ jobs:
           echo "Using Android SDK: $SDK_ROOT"
           echo "Using sdkmanager: $SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          "$SDKMANAGER" --sdk_root="$SDK_ROOT" 'platform-tools' 'platforms;android-36'
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" --install \
+            'platform-tools' \
+            'platforms;android-37.0' \
+            'build-tools;37.0.0'
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
